@@ -1,31 +1,42 @@
-// The full window: a header (app badge, title, icon buttons), an optional
-// status banner (Reconnect progress, alerts, shutdown report), then one card per port.
+// The main window: a navigation bar on the left (Ports, Corner mode, Dark / Light,
+// Settings) and a content area with a page title, an optional status banner and a
+// scrolling page - the port cards or the Settings page. The window can be resized.
 using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 class MainForm : Form, IThemed
 {
+    public enum Page { Ports, Settings }
+
     readonly Theme t;
     readonly float k;
-    readonly IconButton refresh, corner, themeButton, settings;
-    readonly ToolTip tips = new ToolTip { InitialDelay = 400 };
+    readonly NavRail rail;
+    readonly Panel body;
     readonly PortListView list;
-    readonly Font fTitle, fSub, fFoot, fNotice, fNoticeIcon, fBadge;
+    readonly SettingsView settingsView;
+    readonly IconButton refresh;
+    readonly ToolTip tips = new ToolTip { InitialDelay = 400 };
+    readonly Font fTitle, fSub, fNotice, fNoticeIcon;
     readonly Timer noticeTimer;
+    Page page = Page.Ports;
     string subtitle = "Scanning...";
     string notice;
     Tone noticeTone;
 
     public event EventHandler RefreshClicked;
     public event EventHandler CornerClicked;
-    public event EventHandler SettingsClicked;
     public event EventHandler ThemeClicked;
-    public event Action DevicesChanged;   // Windows says devices were added or removed
+    public event Action<bool> DarkModeChanged;   // from the Settings page switch
+    public event Action DevicesChanged;          // Windows says devices were added or removed
     public event Action<PortReading> DetailsClicked;
     public event Action<PortReading> ReconnectClicked;
+
+    [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+    static extern int SetWindowTheme(IntPtr hwnd, string app, string idList);
 
     public MainForm(Theme t, Icon icon)
     {
@@ -33,58 +44,88 @@ class MainForm : Form, IThemed
         using (Graphics g = CreateGraphics()) k = g.DpiX / 96f;
         Text = "USB Ports";
         Icon = icon;
-        FormBorderStyle = FormBorderStyle.FixedSingle;
-        MaximizeBox = false;
+        FormBorderStyle = FormBorderStyle.Sizable;
         StartPosition = FormStartPosition.CenterScreen;
         KeyPreview = true;
         DoubleBuffered = true;
+        MinimumSize = new Size(S(640), S(460));
 
-        fTitle = new Font("Segoe UI Semibold", 15f);
+        fTitle = new Font("Segoe UI Semibold", 17f);
         fSub = new Font("Segoe UI", 9f);
-        fFoot = new Font("Segoe UI", 8.25f);
         fNotice = new Font("Segoe UI", 9f);
         fNoticeIcon = new Font(t.IconFont, 10f);
-        fBadge = new Font(t.IconFont, 14f);
 
-        refresh = AddButton(Glyphs.Refresh, "Refresh now (F5)", true, delegate { Raise(RefreshClicked); });
-        corner = AddButton(Glyphs.Pin, "Corner mode: a small panel that stays on top", false, delegate { Raise(CornerClicked); });
-        themeButton = AddButton(Glyphs.Moon, "Dark mode", false, delegate { Raise(ThemeClicked); });
-        settings = AddButton(Glyphs.Settings, "Settings", false, delegate { Raise(SettingsClicked); });
-        settings.TurnOnHover = true;
+        rail = new NavRail(t, k);
+        rail.Add("ports", Glyphs.Home, "Ports", false);
+        rail.Add("corner", Glyphs.Pin, "Corner", false);
+        rail.Add("theme", Glyphs.Moon, "Dark", true);
+        rail.Add("settings", Glyphs.Settings, "Settings", true);
+        rail.Selected = "ports";
+        rail.ItemClicked += OnRail;
+        Controls.Add(rail);
 
+        refresh = new IconButton(t, k, Glyphs.Refresh, true);
+        refresh.Click += delegate { Raise(RefreshClicked); };
+        tips.SetToolTip(refresh, "Refresh now (F5)");
+        Controls.Add(refresh);
+
+        body = new Panel { AutoScroll = true };
+        body.AutoScrollMargin = new Size(0, S(24));
+        body.HandleCreated += delegate { SetWindowTheme(body.Handle, t.Dark ? "DarkMode_Explorer" : "Explorer", null); };   // scrollbar colours
         list = new PortListView(t, k);
         list.DetailsClicked += delegate (PortReading r) { if (DetailsClicked != null) DetailsClicked(r); };
         list.ReconnectClicked += delegate (PortReading r) { if (ReconnectClicked != null) ReconnectClicked(r); };
-        Controls.Add(list);
+        settingsView = new SettingsView(t, k) { Visible = false };
+        settingsView.DarkModeChanged += delegate (bool on) { if (DarkModeChanged != null) DarkModeChanged(on); };
+        body.Controls.Add(list);
+        body.Controls.Add(settingsView);
+        body.ClientSizeChanged += delegate { LayoutContent(); };   // also fires when the scrollbar appears
+        Controls.Add(body);
 
         noticeTimer = new Timer { Interval = 30000 };
         noticeTimer.Tick += delegate { noticeTimer.Stop(); SetNotice(null, Tone.Normal, false); };
 
+        Rectangle wa = Screen.PrimaryScreen.WorkingArea;
+        ClientSize = new Size(Math.Min(S(820), wa.Width - S(40)), Math.Min(S(720), wa.Height - S(60)));
         ApplyTheme();
         LayoutAll();
     }
 
     int S(float v) { return (int)Math.Round(v * k); }
 
-    IconButton AddButton(string glyph, string tip, bool primary, EventHandler click)
+    void Raise(EventHandler h) { if (h != null) h(this, EventArgs.Empty); }
+
+    void OnRail(string id)
     {
-        var b = new IconButton(t, k, glyph, primary);
-        b.Click += click;
-        tips.SetToolTip(b, tip);
-        Controls.Add(b);
-        return b;
+        if (id == "ports") ShowPage(Page.Ports);
+        else if (id == "settings") ShowPage(Page.Settings);
+        else if (id == "corner") Raise(CornerClicked);
+        else if (id == "theme") Raise(ThemeClicked);
     }
 
-    void Raise(EventHandler h) { if (h != null) h(this, EventArgs.Empty); }
+    public void ShowPage(Page p)
+    {
+        page = p;
+        rail.Selected = p == Page.Ports ? "ports" : "settings";
+        list.Visible = p == Page.Ports;
+        settingsView.Visible = p == Page.Settings;
+        refresh.Visible = p == Page.Ports;
+        if (p == Page.Settings) settingsView.Reload();
+        body.AutoScrollPosition = Point.Empty;
+        LayoutAll();
+    }
 
     public void ApplyTheme()
     {
         BackColor = t.Back;
         ForeColor = t.Text;
+        body.BackColor = t.Back;
         list.BackColor = t.Back;
-        themeButton.Glyph = t.Dark ? Glyphs.Sun : Glyphs.Moon;
-        tips.SetToolTip(themeButton, t.Dark ? "Light mode" : "Dark mode");
+        settingsView.BackColor = t.Back;
+        rail.Set("theme", t.Dark ? Glyphs.Sun : Glyphs.Moon, t.Dark ? "Light" : "Dark");
         if (IsHandleCreated) Dwm.DarkTitleBar(Handle, t.Dark);
+        if (body.IsHandleCreated) SetWindowTheme(body.Handle, t.Dark ? "DarkMode_Explorer" : "Explorer", null);   // scrollbar colours
+        if (page == Page.Settings) settingsView.Reload();
         Invalidate(true);
     }
 
@@ -100,47 +141,77 @@ class MainForm : Form, IThemed
         CenterToScreen();
     }
 
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        if (body != null) LayoutAll();
+    }
+
+    int ContentLeft { get { return rail.Width + S(28); } }
+
     int NoticeBoxHeight
     {
         get
         {
-            if (notice == null) return 0;
-            int textWidth = S(600) - S(40) - S(52);
-            int h = Theme.WrappedHeight(this, notice, fNotice, textWidth);
+            if (notice == null || page != Page.Ports) return 0;
+            int textWidth = ClientSize.Width - ContentLeft - S(28) - S(52);
+            int h = Theme.WrappedHeight(this, notice, fNotice, Math.Max(S(100), textWidth));
             return Math.Max(S(40), h + S(18));
         }
     }
 
-    int NoticeHeight { get { return notice == null ? 0 : NoticeBoxHeight + S(10); } }
+    int HeaderHeight
+    {
+        get
+        {
+            int n = NoticeBoxHeight;
+            return S(92) + (n > 0 ? n + S(12) : 0);
+        }
+    }
 
     void LayoutAll()
     {
-        int width = S(600);
-        int x = width - S(20);
-        foreach (IconButton b in new[] { settings, themeButton, corner, refresh })
-        {
-            x -= b.Width;
-            b.Location = new Point(x, S(24));
-            x -= S(8);
-        }
-        list.Location = new Point(S(20), S(88) + NoticeHeight);
-        list.Width = width - S(40);
-        ClientSize = new Size(width, list.Bottom + S(42));
+        rail.SetBounds(0, 0, rail.Width, ClientSize.Height);
+        refresh.Location = new Point(ClientSize.Width - S(28) - refresh.Width, S(26));
+        body.SetBounds(rail.Width, HeaderHeight, Math.Max(0, ClientSize.Width - rail.Width), Math.Max(0, ClientSize.Height - HeaderHeight));
+        LayoutContent();
         Invalidate();
+    }
+
+    bool layingOut;
+
+    // Page content fills the scrolling area, with side margins.
+    void LayoutContent()
+    {
+        if (layingOut) return;
+        layingOut = true;
+        try
+        {
+            int w = Math.Max(S(300), body.ClientSize.Width - S(28) - S(28));
+            int top = S(2) + body.AutoScrollPosition.Y;
+            if (list.Visible) list.SetBounds(S(28), top, w, list.Height);
+            if (settingsView.Visible) settingsView.SetBounds(S(28), top, w, settingsView.Height);
+            body.PerformLayout();   // WinForms never shrinks the scroll range on its own
+        }
+        finally { layingOut = false; }
     }
 
     public void ShowReadings(List<PortReading> readings, DateTime when)
     {
         list.SetData(readings);
-        subtitle = "Updated " + when.ToShortTimeString() + "   ·   refreshes every minute";
-        LayoutAll();
+        int devices = 0;
+        foreach (PortReading r in readings) if (r.Device != null) devices++;
+        subtitle = readings.Count + (readings.Count == 1 ? " port" : " ports") + "   ·   " + devices + (devices == 1 ? " device" : " devices") +
+                   "   ·   updated " + when.ToShortTimeString();
+        LayoutContent();
+        if (page == Page.Ports) Invalidate(new Rectangle(ContentLeft, 0, ClientSize.Width, S(80)));
     }
 
     public void SetBusy(bool busy) { refresh.Spinning = busy; }
 
     public void SetBusyPort(int port) { list.SetBusyPort(port); }
 
-    // A coloured status line under the header. Sticky notices stay until replaced.
+    // A coloured status line under the title. Sticky notices stay until replaced.
     public void SetNotice(string text, Tone tone, bool sticky)
     {
         notice = text;
@@ -153,12 +224,12 @@ class MainForm : Form, IThemed
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        if (e.KeyCode == Keys.F5) Raise(RefreshClicked);
+        if (e.KeyCode == Keys.F5 && page == Page.Ports) Raise(RefreshClicked);
     }
 
     // ---------------- Windows shutting down ----------------
 
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [DllImport("user32.dll")]
     static extern int GetSystemMetrics(int index);
 
     public bool ShuttingDown;
@@ -184,20 +255,16 @@ class MainForm : Form, IThemed
         base.OnPaint(e);
         Graphics g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
+        int x = ContentLeft;
+        string title = page == Page.Ports ? "USB Ports" : "Settings";
+        string sub = page == Page.Ports ? subtitle : "Changes apply straight away.";
+        TextRenderer.DrawText(g, title, fTitle, new Point(x - S(2), S(20)), t.Text, t.Back, TextFormatFlags.NoPadding);
+        TextRenderer.DrawText(g, sub, fSub, new Point(x, S(56)), t.Muted, t.Back, TextFormatFlags.NoPadding);
 
-        // app badge: the same blue USB mark as the app icon
-        var badge = new Rectangle(S(20), S(24), S(40), S(40));
-        using (var grad = new LinearGradientBrush(badge, Color.FromArgb(37, 99, 235), Color.FromArgb(6, 182, 212), 45f))
-        using (GraphicsPath p = Theme.Round(badge, S(10))) g.FillPath(grad, p);
-        TextRenderer.DrawText(g, Glyphs.Usb, fBadge, badge, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-
-        TextRenderer.DrawText(g, "USB Ports", fTitle, new Point(S(72), S(20)), t.Text, t.Back, TextFormatFlags.NoPadding);
-        TextRenderer.DrawText(g, subtitle, fSub, new Point(S(73), S(50)), t.Muted, t.Back, TextFormatFlags.NoPadding);
-
-        if (notice != null)
+        if (notice != null && page == Page.Ports)
         {
             Color c = noticeTone == Tone.Normal ? t.Accent : t.ToneColor(noticeTone);
-            var r = new Rectangle(S(20), S(88), ClientSize.Width - S(40), NoticeBoxHeight);
+            var r = new Rectangle(x, S(92), ClientSize.Width - x - S(28), NoticeBoxHeight);
             Theme.FillRound(g, t.Soft(c), r, S(8));
             string glyph = noticeTone == Tone.Good ? "" : noticeTone == Tone.Normal ? Glyphs.Sync : Glyphs.Warning;
             TextRenderer.DrawText(g, glyph, fNoticeIcon, new Rectangle(r.X + S(12), r.Y, S(20), S(40)), c,
@@ -205,9 +272,5 @@ class MainForm : Form, IThemed
             TextRenderer.DrawText(g, notice, fNotice, new Rectangle(r.X + S(40), r.Y + S(9), r.Width - S(52), r.Height - S(18)), t.Text,
                 TextFormatFlags.Left | TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
         }
-
-        TextRenderer.DrawText(g, "Closing this window keeps USB Ports in the tray. Right-click its tray icon for options or to exit.", fFoot,
-            new Rectangle(S(20), list.Bottom + S(10), ClientSize.Width - S(40), S(22)), t.Muted, t.Back,
-            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
     }
 }

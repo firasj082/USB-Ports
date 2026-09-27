@@ -50,14 +50,33 @@ static class Program
             portable = true;
         }
 
+        bool atSignIn = HasArg(args, "--autostart");
+        AppLog.Write("Started " + Assembly.GetExecutingAssembly().GetName().Version + (args.Length > 0 ? " (" + string.Join(" ", args) + ")" : ""));
+        if (atSignIn && !Settings.StartWithWindows)
+        {
+            AppLog.Write("Sign-in start skipped: Start with Windows is off (or disabled in Task Manager).");
+            return 0;
+        }
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += delegate (object s, ThreadExceptionEventArgs e) { AppLog.Write("Error: " + e.Exception); };
+        AppDomain.CurrentDomain.UnhandledException += delegate (object s, UnhandledExceptionEventArgs e) { AppLog.Write("Fatal error: " + e.ExceptionObject); };
+
         bool first;
         using (var mutex = new Mutex(true, @"Local\UsbPortsViewer.Running", out first))
         using (var show = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\UsbPortsViewer.Show"))
         {
-            if (!first) { show.Set(); return 0; }   // already running: bring that window back instead
+            if (!first)
+            {
+                // Already running. A sign-in launch (both startup paths may fire) stays quiet;
+                // opening the app again brings the existing window forward.
+                if (atSignIn || HasArg(args, "--tray")) AppLog.Write("Already running; this launch exits.");
+                else show.Set();
+                return 0;
+            }
             using (var exit = new EventWaitHandle(false, EventResetMode.AutoReset, Installer.ExitSignal))
                 Application.Run(new TrayApp(show, exit, HasArg(args, "--corner"), HasArg(args, "--tray"), portable));
         }
+        AppLog.Write("Exited.");
         return 0;
     }
 
@@ -76,7 +95,6 @@ class TrayApp : ApplicationContext
     readonly ContextMenuStrip menu;
     readonly Icon windowIcon;
     readonly System.Windows.Forms.Timer everyMinute, everyTwoSeconds, reconnectWatch, deviceSettle;
-    SettingsForm settingsForm;
     DateTime lastScanDone = DateTime.MinValue;
     List<PhysicalPort> ports = new List<PhysicalPort>();
     List<PortReading> lastResults;
@@ -103,7 +121,7 @@ class TrayApp : ApplicationContext
         main.DetailsClicked += ShowDetails;
         main.ReconnectClicked += StartReconnect;
         main.CornerClicked += delegate { EnterCorner(); };
-        main.SettingsClicked += delegate { ShowSettings(); };
+        main.DarkModeChanged += SetDark;
         main.ThemeClicked += delegate { SetDark(!theme.Dark); };
         main.DevicesChanged += delegate { deviceSettle.Stop(); deviceSettle.Start(); };
         main.FormClosing += OnMainClosing;
@@ -306,13 +324,12 @@ class TrayApp : ApplicationContext
         if (main.Visible) main.SetNotice(string.Join("  ", messages.ToArray()), Tone.Warn, false);
     }
 
+    // Settings is a page of the main window.
     void ShowSettings()
     {
         if (exiting) return;
-        if (settingsForm != null && !settingsForm.IsDisposed) { settingsForm.Activate(); return; }
-        settingsForm = new SettingsForm(theme, windowIcon, SetDark);
-        if (main.Visible) { settingsForm.Show(main); }
-        else { settingsForm.StartPosition = FormStartPosition.CenterScreen; settingsForm.Show(); }
+        OpenMain();
+        main.ShowPage(global::MainForm.Page.Settings);
     }
 
     // Live dark / light switch: recolour the shared theme, then every open window.

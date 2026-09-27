@@ -96,11 +96,13 @@ static class Settings
         }
     }
 
+    // Start with Windows = the Run entry (so it shows and can be toggled in Task
+    // Manager > Startup apps) + a sign-in task (so it really starts; see StartupTask).
     public static void SetStartup(bool on, string exePath)
     {
         using (RegistryKey k = Registry.CurrentUser.CreateSubKey(RunKeyPath))
         {
-            if (on) k.SetValue(RunValue, "\"" + exePath + "\" --tray");
+            if (on) k.SetValue(RunValue, RunCommand(exePath));
             else if (k.GetValue(RunValue) != null) k.DeleteValue(RunValue);
         }
         using (RegistryKey k = Registry.CurrentUser.CreateSubKey(ApprovedKeyPath))
@@ -108,12 +110,20 @@ static class Settings
             if (on) k.SetValue(RunValue, ApprovedEnabled, RegistryValueKind.Binary);
             else if (k.GetValue(RunValue) != null) k.DeleteValue(RunValue);
         }
+        try
+        {
+            if (on) StartupTask.Register(exePath);
+            else StartupTask.Remove();
+        }
+        catch (Exception ex) { AppLog.Write("Could not " + (on ? "create" : "remove") + " the sign-in task: " + ex.Message); }
         SetValue("AutoStartChosen", 1);
     }
 
+    static string RunCommand(string exePath) { return "\"" + exePath + "\" --tray --autostart"; }
+
     // Start with Windows is on by default: turn it on the first time the app runs.
-    // Later runs only keep the entry pointing at this exe (and add the enabled flag
-    // older versions left out); an on / off choice made in Task Manager is respected.
+    // Later runs keep the entry and the sign-in task pointing at this exe (and add
+    // what older versions left out); an on / off choice made in Task Manager is respected.
     public static void ApplyStartupDefault()
     {
         try
@@ -121,13 +131,14 @@ static class Settings
             if (GetInt("AutoStartChosen", 0) == 0) { SetStartup(true, Application.ExecutablePath); return; }
             using (RegistryKey run = Registry.CurrentUser.OpenSubKey(RunKeyPath, true))
             {
-                if (run == null || run.GetValue(RunValue) == null) return;
-                run.SetValue(RunValue, "\"" + Application.ExecutablePath + "\" --tray");
+                if (run == null || run.GetValue(RunValue) == null) return;   // Start with Windows is off
+                run.SetValue(RunValue, RunCommand(Application.ExecutablePath));
             }
             using (RegistryKey k = Registry.CurrentUser.CreateSubKey(ApprovedKeyPath))
                 if (k.GetValue(RunValue) == null) k.SetValue(RunValue, ApprovedEnabled, RegistryValueKind.Binary);
+            if (!StartupTask.IsRegisteredFor(Application.ExecutablePath)) StartupTask.Register(Application.ExecutablePath);
         }
-        catch { }
+        catch (Exception ex) { AppLog.Write("Startup setup: " + ex.Message); }
     }
 
     public static string DataFolder

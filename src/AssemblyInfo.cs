@@ -6,5 +6,5 @@ using System.Reflection;
 [assembly: AssemblyProduct("USB Ports")]
 [assembly: AssemblyCompany("USB Ports")]
 [assembly: AssemblyCopyright("")]
-[assembly: AssemblyVersion("1.6.1.0")]
-[assembly: AssemblyFileVersion("1.6.1.0")]
+[assembly: AssemblyVersion("1.7.0.0")]
+[assembly: AssemblyFileVersion("1.7.0.0")]

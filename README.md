@@ -30,9 +30,13 @@
 
 Installing takes a second and needs no administrator rights. It installs for your account only, in `%LOCALAPPDATA%\Programs\USB Ports`, adds a Start menu shortcut (and optionally a Desktop shortcut), and can start with Windows quietly in the system tray. Opening a newer `USB-Ports-Setup.exe` later offers **Update**.
 
-**Uninstall:** Windows **Settings → Apps → Installed apps → USB Ports → Uninstall**. This removes the app, its shortcuts, its startup entry and its settings.
+**Uninstall:** Windows **Settings → Apps → Installed apps → USB Ports → Uninstall**. This removes the app, its shortcuts, its startup entries and its settings.
 
 **Requirements:** Windows 10 or 11. It uses the .NET Framework that is already part of Windows, so there's nothing else to install.
+
+## Using it
+
+The bar on the left switches between the **Ports** page and **Settings**, opens **Corner mode**, and flips between dark and light. Closing the window keeps USB Ports running in the system tray: click the tray icon to open it again, or right-click it for Corner mode, Settings and Exit.
 
 ## What it shows
 
@@ -60,7 +64,7 @@ A small see-through panel that stays on top in a corner of the screen and update
 - **Reconnect** does in software what unplugging and replugging does, with the device agreeing on its speed again. Drives are safely ejected first; if something is using the drive, nothing is disconnected. On many laptops the USB ports share power, and switching one off and on can disrupt a drive on another port, so by default Reconnect only runs while no other USB drive is attached.
 - **It never reads or writes your drives' data.** It reads status from Windows' USB drivers, and only asks a device to describe itself when you open Details.
 
-<img src="docs/settings.png" width="420" alt="Settings">
+<img src="docs/settings.png" width="560" alt="Settings">
 
 ## Light on resources
 
@@ -83,7 +87,7 @@ No SDK or Visual Studio needed: it compiles with the C# compiler that ships with
 .\tools\make-icon.ps1  # regenerates src\app.ico
 ```
 
-Command-line options: `--tray` (start hidden in the tray), `--corner` (start in corner mode), `--portable` (run without installing), `--install [--no-desktop] [--no-startup] [--no-launch]`, `--uninstall [--quiet]`.
+Command-line options: `--tray` (start hidden in the tray), `--autostart` (used at sign-in; exits if Start with Windows is off), `--corner` (start in corner mode), `--portable` (run without installing), `--install [--no-desktop] [--no-startup] [--no-launch]`, `--uninstall [--quiet]`.
 
 | Folder | What's in it |
 |---|---|

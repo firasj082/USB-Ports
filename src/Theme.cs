@@ -11,7 +11,7 @@ public enum Tone { Good, Normal, Warn, Bad, Empty }
 public class Theme
 {
     public bool Dark;
-    public Color Back, Card, Border, Text, Muted, Hover, Accent, AccentHover;
+    public Color Back, Card, Border, Text, Muted, Hover, Accent, AccentHover, Rail;
     public Color Good = Color.FromArgb(22, 163, 74);
     public Color Warn = Color.FromArgb(217, 119, 6);
     public Color Bad = Color.FromArgb(220, 38, 38);
@@ -45,7 +45,7 @@ public class Theme
     public void Apply(bool dark)
     {
         Theme s = dark ? Dark_() : Light();
-        Dark = s.Dark; Back = s.Back; Card = s.Card; Border = s.Border; Text = s.Text; Muted = s.Muted;
+        Dark = s.Dark; Back = s.Back; Rail = s.Rail; Card = s.Card; Border = s.Border; Text = s.Text; Muted = s.Muted;
         Hover = s.Hover; Accent = s.Accent; AccentHover = s.AccentHover; Normal = s.Normal;
         Good = s.Good; Warn = s.Warn; Bad = s.Bad;
     }
@@ -54,6 +54,7 @@ public class Theme
     {
         var t = new Theme();
         t.Back = Color.FromArgb(243, 243, 243);
+        t.Rail = Color.FromArgb(233, 233, 235);
         t.Card = Color.White;
         t.Border = Color.FromArgb(229, 229, 229);
         t.Text = Color.FromArgb(27, 27, 27);
@@ -71,6 +72,7 @@ public class Theme
         var t = new Theme();
         t.Dark = true;
         t.Back = Color.FromArgb(32, 32, 32);
+        t.Rail = Color.FromArgb(25, 25, 27);
         t.Card = Color.FromArgb(43, 43, 43);
         t.Border = Color.FromArgb(58, 58, 58);
         t.Text = Color.FromArgb(255, 255, 255);
@@ -237,6 +239,7 @@ static class Glyphs
     public const string Battery = "";
     public const string Monitor = "";
     public const string Download = "";
+    public const string Home = "\uE80F";
     public const string Driver = "";
     public const string Moon = "";
     public const string Sun = "";

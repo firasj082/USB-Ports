@@ -14,6 +14,8 @@ class FlatButton : Control
     readonly Font glyphFont;
     bool hover;
 
+    public bool OnCard;   // sits on a card: paint its corners in the card colour
+
     public FlatButton(Theme t, float k, string glyph, string text, bool primary)
     {
         this.t = t; this.k = k; this.glyph = glyph; this.primary = primary;
@@ -41,7 +43,7 @@ class FlatButton : Control
     protected override void OnPaint(PaintEventArgs e)
     {
         Graphics g = e.Graphics;
-        g.Clear(Parent != null ? Parent.BackColor : t.Back);
+        g.Clear(OnCard ? t.Card : Parent != null ? Parent.BackColor : t.Back);
         g.SmoothingMode = SmoothingMode.AntiAlias;
         var r = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
         Color fill, fg;
