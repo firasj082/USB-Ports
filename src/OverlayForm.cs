@@ -13,7 +13,6 @@ class OverlayForm : Form
     readonly float k;
     readonly Font fHead, fName, fPill, fIcon, fNum;
     List<PortReading> data = new List<PortReading>();
-    DateTime updated;
     bool movedByUser;
     Point dragStart;
     bool dragging;
@@ -64,7 +63,6 @@ class OverlayForm : Form
     public void ShowReadings(List<PortReading> readings, DateTime when)
     {
         data = readings;
-        updated = when;
         int h = S(34) + Math.Max(1, data.Count) * S(30) + S(8);
         if (movedByUser) Height = h;
         else { Height = h; PlaceInCorner(); }
@@ -118,9 +116,6 @@ class OverlayForm : Form
 
         TextRenderer.DrawText(g, "USB PORTS", fHead, new Rectangle(pad, S(8), S(120), S(20)), t.Muted, t.Back,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-        if (updated != DateTime.MinValue)
-            TextRenderer.DrawText(g, updated.ToLongTimeString(), fHead, new Rectangle(Width - pad - S(120), S(8), S(120), S(20)), t.Muted, t.Back,
-                TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
 
         int y = S(32);
         foreach (PortReading r in data)
