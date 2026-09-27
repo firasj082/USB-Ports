@@ -47,6 +47,9 @@ class SettingsForm : Form, IThemed
         Add("Safely eject USB drives at shutdown",
             "When Windows shuts down or restarts, USB Ports safely removes every USB drive first. It needs to be running for this; in the tray is enough.",
             Settings.EjectOnShutdown, delegate (bool on) { Settings.EjectOnShutdown = on; });
+        Add("Close apps that keep a drive busy at shutdown",
+            "If a drive can't be ejected because an app is still using it, USB Ports asks that app to close (and closes it after 3 seconds if it doesn't), then ejects the drive. Windows waits for this, at most 30 seconds.",
+            Settings.CloseAppsAtShutdown, delegate (bool on) { Settings.CloseAppsAtShutdown = on; });
         Add("Alert me about USB problems",
             "Shows a notification when a USB drive disconnects unexpectedly, when a device that supports USB 3 connects at USB 2, or when a port reports an error. It only reacts when Windows reports a device change, so it costs nothing while idle.",
             Settings.UsbAlerts, delegate (bool on) { Settings.UsbAlerts = on; });

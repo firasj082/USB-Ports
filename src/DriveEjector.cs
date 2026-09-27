@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 
 static class DriveEjector
 {
@@ -80,31 +81,75 @@ static class DriveEjector
     // tells Windows why it needs a moment. Returns a one-line report.
     public static string EjectAllForShutdown(IntPtr hwnd)
     {
-        try { ShutdownBlockReasonCreate(hwnd, "Safely removing USB drives..."); } catch { }
+        // While this runs, Windows shows "USB Ports is preventing shutdown" with this
+        // reason and a "Shut down anyway" button. It never takes longer than the deadline.
+        Block(hwnd, "Safely ejecting USB drives...");
+        DateTime deadline = DateTime.Now.AddSeconds(30);
         var done = new List<string>();
-        var failed = new List<string>();
+        var closedApps = new List<string>();
+        var pending = new List<UsbDevice>();
+        var lastProblem = new Dictionary<UsbDevice, string>();
         try
         {
-            foreach (UsbDevice d in UsbDrives(true))
+            pending = UsbDrives(true);
+            while (pending.Count > 0)
             {
-                string label = Label(d);
-                string problem;
-                try { problem = TryEject(d.InstanceId); }
-                catch (Exception ex) { problem = ex.Message; }
-                if (problem == null) done.Add(label);
-                else failed.Add(label + ": " + problem);
+                foreach (UsbDevice d in pending.ToArray())
+                {
+                    string problem;
+                    try { problem = TryEject(d.InstanceId); }
+                    catch (Exception ex) { problem = ex.Message; }
+                    if (problem == null) { done.Add(Label(d)); pending.Remove(d); }
+                    else lastProblem[d] = problem;
+                }
+                if (pending.Count == 0 || DateTime.Now >= deadline) break;
+
+                // Something still has a drive open. Apps normally close themselves at
+                // shutdown before USB Ports is told; close whatever is left, then retry.
+                if (Settings.CloseAppsAtShutdown)
+                {
+                    var letters = new List<string>();
+                    foreach (UsbDevice d in pending) foreach (DriveVolume v in d.Drives) letters.Add(v.Letter);
+                    Dictionary<int, string> users = DriveUsers.Find(letters, TimeSpan.FromSeconds(4));
+                    if (users.Count > 0)
+                    {
+                        Log("In use: " + string.Join(", ", letters.ToArray()) + ". Closing " + string.Join(", ", new List<string>(users.Values).ToArray()) + ".");
+                        Block(hwnd, "Closing apps that are using USB drives so they can be safely ejected...");
+                        foreach (string name in DriveUsers.Close(users, TimeSpan.FromSeconds(3)))
+                            if (!closedApps.Contains(name)) closedApps.Add(name);
+                        Block(hwnd, "Safely ejecting USB drives...");
+                        continue;   // retry straight away
+                    }
+                }
+                Thread.Sleep(1000);   // apps may still be finishing their own shutdown
             }
         }
-        catch (Exception ex) { failed.Add(ex.Message); }
+        catch (Exception ex) { Log("Error while ejecting: " + ex.Message); }
         finally
         {
             try { ShutdownBlockReasonDestroy(hwnd); } catch { }
         }
-        if (done.Count == 0 && failed.Count == 0) return null;   // no USB drives: nothing to report
+
+        if (done.Count == 0 && pending.Count == 0) return null;   // no USB drives: nothing to report
         var sb = new StringBuilder("At the last shutdown");
         if (done.Count > 0) sb.Append(", USB Ports safely ejected ").Append(string.Join(", ", done.ToArray()));
-        if (failed.Count > 0) sb.Append(done.Count > 0 ? ". It could not eject " : ", USB Ports could not eject ").Append(string.Join("; ", failed.ToArray()));
+        if (closedApps.Count > 0) sb.Append(" after closing ").Append(string.Join(", ", closedApps.ToArray()));
+        if (pending.Count > 0)
+        {
+            var failed = new List<string>();
+            foreach (UsbDevice d in pending)
+            {
+                string why;
+                failed.Add(Label(d) + (lastProblem.TryGetValue(d, out why) ? ": " + why : ""));
+            }
+            sb.Append(done.Count > 0 ? ". It could not eject " : ", USB Ports could not eject ").Append(string.Join("; ", failed.ToArray()));
+        }
         return sb.Append('.').ToString();
+    }
+
+    static void Block(IntPtr hwnd, string reason)
+    {
+        try { ShutdownBlockReasonCreate(hwnd, reason); } catch { }
     }
 
     static string Label(UsbDevice d)

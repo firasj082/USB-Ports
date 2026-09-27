@@ -16,6 +16,13 @@ static class Settings
         set { SetValue("EjectOnShutdown", value ? 1 : 0); }
     }
 
+    // At shutdown, close apps that keep a USB drive busy so it can still be ejected.
+    public static bool CloseAppsAtShutdown
+    {
+        get { return GetInt("CloseAppsAtShutdown", 1) != 0; }
+        set { SetValue("CloseAppsAtShutdown", value ? 1 : 0); }
+    }
+
     // X button: true = hide to the tray, false = close the app completely.
     public static bool CloseToTray
     {

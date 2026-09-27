@@ -55,7 +55,7 @@ A small see-through panel that stays on top in a corner of the screen and update
 
 ## Safety features
 
-- **Safely ejects USB drives at shutdown and restart.** This matters most with Windows' Fast Startup, where "shut down" can leave external drives marked in use. It runs from the tray; the next time you open the app it tells you what was ejected, and a shutdown log is kept.
+- **Safely ejects USB drives at shutdown and restart.** This matters most with Windows' Fast Startup, where "shut down" can leave external drives marked in use. If an app is still using a drive, USB Ports holds the shutdown for a moment (at most 30 seconds, with Windows' usual **Shut down anyway** button), asks that app to close, closes it if it doesn't, and then ejects the drive. It runs from the tray; the next time you open the app it tells you what was ejected and which apps it had to close, and a shutdown log is kept.
 - **Alerts** you when a USB drive disconnects without being safely removed, when a USB 3 device connects at USB 2, or when a port reports an error.
 - **Reconnect** does in software what unplugging and replugging does, with the device agreeing on its speed again. Drives are safely ejected first; if something is using the drive, nothing is disconnected. On many laptops the USB ports share power, and switching one off and on can disrupt a drive on another port, so by default Reconnect only runs while no other USB drive is attached.
 - **It never reads or writes your drives' data.** It reads status from Windows' USB drivers, and only asks a device to describe itself when you open Details.
