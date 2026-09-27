@@ -65,6 +65,12 @@ static class Settings
         set { if (value == null) Delete("LastShutdownReport"); else SetValue("LastShutdownReport", value); }
     }
 
+    // Windows' own enable / disable flag for startup entries - the switch Task Manager's
+    // Startup apps page flips. Current Windows 11 skips entries that have no flag at all,
+    // so USB Ports writes "enabled" when you turn Start with Windows on.
+    const string ApprovedKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
+    static readonly byte[] ApprovedEnabled = { 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
     // Launches quietly into the tray when you sign in (listed in Task Manager > Startup apps).
     public static bool StartWithWindows
     {
@@ -73,11 +79,21 @@ static class Settings
             try
             {
                 using (RegistryKey k = Registry.CurrentUser.OpenSubKey(RunKeyPath))
-                    return k != null && k.GetValue(RunValue) != null;
+                    if (k == null || k.GetValue(RunValue) == null) return false;
+                return !DisabledInTaskManager();
             }
             catch { return false; }
         }
         set { SetStartup(value, Application.ExecutablePath); }
+    }
+
+    static bool DisabledInTaskManager()
+    {
+        using (RegistryKey k = Registry.CurrentUser.OpenSubKey(ApprovedKeyPath))
+        {
+            byte[] flag = k == null ? null : k.GetValue(RunValue) as byte[];
+            return flag != null && flag.Length > 0 && (flag[0] & 1) != 0;   // odd first byte = disabled
+        }
     }
 
     public static void SetStartup(bool on, string exePath)
@@ -87,17 +103,29 @@ static class Settings
             if (on) k.SetValue(RunValue, "\"" + exePath + "\" --tray");
             else if (k.GetValue(RunValue) != null) k.DeleteValue(RunValue);
         }
+        using (RegistryKey k = Registry.CurrentUser.CreateSubKey(ApprovedKeyPath))
+        {
+            if (on) k.SetValue(RunValue, ApprovedEnabled, RegistryValueKind.Binary);
+            else if (k.GetValue(RunValue) != null) k.DeleteValue(RunValue);
+        }
         SetValue("AutoStartChosen", 1);
     }
 
-    // Start with Windows is on by default: turn it on the first time the app runs,
-    // and keep the startup entry pointing at the current exe.
+    // Start with Windows is on by default: turn it on the first time the app runs.
+    // Later runs only keep the entry pointing at this exe (and add the enabled flag
+    // older versions left out); an on / off choice made in Task Manager is respected.
     public static void ApplyStartupDefault()
     {
         try
         {
-            if (GetInt("AutoStartChosen", 0) == 0) StartWithWindows = true;
-            else if (StartWithWindows) StartWithWindows = true;   // refresh the path if the app moved
+            if (GetInt("AutoStartChosen", 0) == 0) { SetStartup(true, Application.ExecutablePath); return; }
+            using (RegistryKey run = Registry.CurrentUser.OpenSubKey(RunKeyPath, true))
+            {
+                if (run == null || run.GetValue(RunValue) == null) return;
+                run.SetValue(RunValue, "\"" + Application.ExecutablePath + "\" --tray");
+            }
+            using (RegistryKey k = Registry.CurrentUser.CreateSubKey(ApprovedKeyPath))
+                if (k.GetValue(RunValue) == null) k.SetValue(RunValue, ApprovedEnabled, RegistryValueKind.Binary);
         }
         catch { }
     }
