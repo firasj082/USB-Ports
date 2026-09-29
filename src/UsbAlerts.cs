@@ -13,6 +13,12 @@ static class UsbAlerts
 
     public static List<string> Compare(List<PortReading> before, List<PortReading> after, int ignorePort)
     {
+        return Compare(before, after, ignorePort, RemovedUnexpectedly);
+    }
+
+    // removedUnexpectedly: did Windows log this device as removed without a safe removal?
+    public static List<string> Compare(List<PortReading> before, List<PortReading> after, int ignorePort, Func<string, bool> removedUnexpectedly)
+    {
         var messages = new List<string>();
         if (before == null || after == null) return messages;
         Dictionary<string, Seen> was = Flatten(before), now = Flatten(after);
@@ -21,7 +27,7 @@ static class UsbAlerts
         {
             UsbDevice d = kv.Value.Device;
             if (kv.Value.Port == ignorePort || now.ContainsKey(kv.Key) || d.DiskInstanceIds.Count == 0) continue;
-            if (RemovedUnexpectedly(kv.Key))
+            if (removedUnexpectedly(kv.Key))
                 messages.Add(Label(d) + " disconnected unexpectedly. If you did not unplug it, check its cable and connection; files being copied may be incomplete.");
         }
 

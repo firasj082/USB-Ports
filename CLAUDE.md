@@ -4,6 +4,21 @@ A small Windows tray app (C#, WinForms) that shows what is plugged into each
 USB port, how fast it runs, and safely ejects USB drives at shutdown. It talks to
 real hardware on the owner's laptop, so the safety rules below come first.
 
+## More rules, and the results log
+
+The files in `.claude/rules/` are part of these rules and load with this one:
+
+- `read-first.md`: what to read before changing each area, and when to read the
+  official docs.
+- `testing.md`: every change ships with unit and integration tests. Also covers
+  how the test harness works.
+- `performance.md`: the RAM and CPU budgets and how to measure them.
+  Performance comes first in every design choice, after hardware safety.
+- `file-size.md`: no file may exceed 500 lines.
+- `results.md`: how to record results in `docs/RESULTS.md`, the project's log
+  of measurements, incidents, lessons and decisions. Read that log at the start
+  of every session.
+
 ## Build and release
 
 - Built with the C# compiler that ships with Windows (.NET Framework 4.x,
@@ -16,13 +31,19 @@ real hardware on the owner's laptop, so the safety rules below come first.
   PowerShell, read and write them as UTF-8 (`[IO.File]::ReadAllText` /
   `WriteAllText` with `UTF8Encoding($false)`); `Get-Content` in PowerShell 5.1
   reads them as ANSI and garbles `·`, `—` and the icon glyphs.
-- Release steps: bump the version in `src\AssemblyInfo.cs`, run
-  `.\build.ps1 -Release` (also copies the exe to `download\`, which the README's
-  Download button links to), install it with
-  `dist\USB-Ports-Setup.exe --install --no-launch`, restart the app, commit, push.
-  `dist\` is not committed.
-- Keep each file under 500 lines; split along natural seams (a control, a helper
-  class) rather than growing a file.
+- Release steps:
+  1. Run `.\test.ps1 -Integration`.
+  2. Bump the version in `src\AssemblyInfo.cs`.
+  3. Run `.\build.ps1 -Release`. This also copies the exe to `download\`, which
+     the README's Download button links to.
+  4. Install it with `dist\USB-Ports-Setup.exe --install --no-launch`.
+  5. Restart the app.
+  6. Run `.\test.ps1 -Perf`, and keep the result within budget.
+  7. Add the results to `docs\RESULTS.md`.
+  8. Commit and push. `dist\` is not committed.
+- No file may exceed 500 lines (`.claude/rules/file-size.md`). `.\test.ps1`
+  checks this. Split along natural seams, such as a control or a helper class,
+  instead of growing a file.
 
 ## Safety rules (hardware)
 
@@ -57,10 +78,19 @@ real hardware on the owner's laptop, so the safety rules below come first.
 - **Never eject, format or power-cycle the owner's SSD** (XSTAR SS D 512GB, D:)
   or reconnect the mouse without asking first. Test disruptive things on the
   SanDisk flash drive, with test processes, or with fake paths.
-- To test the shutdown code without shutting down: send `WM_QUERYENDSESSION` then
-  `WM_ENDSESSION` to the app's hidden main window, with "Safely eject USB drives
-  at shutdown" turned off first (so no drive is ejected); check `app.log` and
-  `shutdown.log`; turn it back on and restart the app with `--tray`.
+- **A simulated shutdown is allowed only when no USB drive is plugged in.** This
+  is the owner's rule. It covers sending `WM_QUERYENDSESSION` / `WM_ENDSESSION` to
+  any copy of USB Ports, including a `TrayApp` inside the test process.
+  - Check immediately before sending that `DriveEjector.UsbDrives()` is empty.
+  - If a drive is attached, skip the test and say so. Never ask the owner to
+    unplug the SSD just for this.
+  - Turning "Safely eject USB drives at shutdown" off is **not** a safeguard.
+    Claude's tools run inside the Claude app's MSIX package, so their registry
+    writes never reach USB Ports.
+  - A simulated shutdown ejected the owner's SSD twice on 2026-09-29/30 (see
+    `docs/RESULTS.md`).
+  - The automated version is `tests\ShutdownIntegrationTests.cs`. It uses a
+    stand-in eject and skips itself while a drive is attached.
 - Check UI changes by rendering the forms off-screen through the installed exe
   (load it with reflection, `PrintWindow` or `DrawToBitmap`) and looking at the
   images; nobody should have to click through them by hand.

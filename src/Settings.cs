@@ -6,9 +6,28 @@ using Microsoft.Win32;
 
 static class Settings
 {
-    const string KeyPath = @"Software\UsbPorts";
+    static string KeyPath = @"Software\UsbPorts";
     const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     const string RunValue = "USB Ports";
+
+    // Tests keep their settings and files apart from the owner's: their own registry
+    // key and a temp folder. (Start with Windows still reads the real Run entry.)
+    const string TestKeyPath = @"Software\UsbPorts.Test";
+    static string dataFolderOverride;
+
+    public static void UseTestStorage(string dataFolder)
+    {
+        KeyPath = TestKeyPath;
+        dataFolderOverride = dataFolder;
+    }
+
+    public static void DeleteTestStorage()
+    {
+        if (KeyPath != TestKeyPath) return;
+        try { Registry.CurrentUser.DeleteSubKeyTree(TestKeyPath, false); } catch { }
+    }
+
+    public static bool UsingTestStorage { get { return KeyPath == TestKeyPath; } }
 
     public static bool EjectOnShutdown
     {
@@ -90,16 +109,20 @@ static class Settings
     static bool DisabledInTaskManager()
     {
         using (RegistryKey k = Registry.CurrentUser.OpenSubKey(ApprovedKeyPath))
-        {
-            byte[] flag = k == null ? null : k.GetValue(RunValue) as byte[];
-            return flag != null && flag.Length > 0 && (flag[0] & 1) != 0;   // odd first byte = disabled
-        }
+            return IsDisabledFlag(k == null ? null : k.GetValue(RunValue) as byte[]);
+    }
+
+    // The StartupApproved value: an odd first byte means turned off in Task Manager.
+    public static bool IsDisabledFlag(byte[] flag)
+    {
+        return flag != null && flag.Length > 0 && (flag[0] & 1) != 0;
     }
 
     // Start with Windows = the Run entry (so it shows and can be toggled in Task
     // Manager > Startup apps) + a sign-in task (so it really starts; see StartupTask).
     public static void SetStartup(bool on, string exePath)
     {
+        if (UsingTestStorage) throw new InvalidOperationException("Tests must not change Start with Windows.");
         using (RegistryKey k = Registry.CurrentUser.CreateSubKey(RunKeyPath))
         {
             if (on) k.SetValue(RunValue, RunCommand(exePath));
@@ -126,6 +149,7 @@ static class Settings
     // what older versions left out); an on / off choice made in Task Manager is respected.
     public static void ApplyStartupDefault()
     {
+        if (UsingTestStorage) return;
         try
         {
             if (GetInt("AutoStartChosen", 0) == 0) { SetStartup(true, Application.ExecutablePath); return; }
@@ -145,7 +169,7 @@ static class Settings
     {
         get
         {
-            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "USB Ports");
+            string dir = dataFolderOverride ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "USB Ports");
             try { Directory.CreateDirectory(dir); } catch { }
             return dir;
         }

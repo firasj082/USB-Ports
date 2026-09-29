@@ -39,6 +39,17 @@ static class DriveEjector
         catch { return false; }
     }
 
+    // The shutdown or restart is definite: eject every USB drive if Settings say so,
+    // and keep a record. ejectAll is EjectAllForShutdown (tests pass a stand-in).
+    public static void HandleShutdown(IntPtr hwnd, Func<IntPtr, string> ejectAll)
+    {
+        if (!Settings.EjectOnShutdown) { Log("Shutdown or restart: ejecting is turned off in Settings."); return; }
+        Log("Shutdown or restart: ejecting USB drives...");
+        string report = ejectAll(hwnd);
+        Log(report ?? "No USB drives were attached.");
+        if (report != null) Settings.LastShutdownReport = report;
+    }
+
     // Returns null on success, otherwise why Windows refused.
     public static string TryEject(string usbInstanceId)
     {
@@ -47,8 +58,15 @@ static class DriveEjector
         int veto;
         var vetoName = new StringBuilder(512);
         int cr = Native.CM_Request_Device_Eject(dev, out veto, vetoName, vetoName.Capacity, 0);
+        return RefusalText(cr, veto, vetoName.ToString());
+    }
+
+    // What CM_Request_Device_Eject's result means, in words; null when it worked.
+    // veto is a PNP_VETO_TYPE (cfg.h).
+    public static string RefusalText(int cr, int veto, string vetoName)
+    {
         if (cr == 0 && veto == 0) return null;
-        string who = vetoName.Length > 0 ? " (" + vetoName + ")" : "";
+        string who = !string.IsNullOrEmpty(vetoName) ? " (" + vetoName + ")" : "";
         switch (veto)
         {
             case 3: return "an app is using it" + who;
@@ -84,7 +102,7 @@ static class DriveEjector
             if (lines.Count > 200) lines.RemoveRange(0, lines.Count - 200);
             File.WriteAllLines(path, lines.ToArray());
         }
-        catch { }
+        catch (Exception ex) { AppLog.Write("Could not write shutdown.log (" + line + "): " + ex.Message); }
     }
 
     static void AddDrives(UsbDevice d, List<UsbDevice> drives)

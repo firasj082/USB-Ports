@@ -237,25 +237,21 @@ class MainForm : Form, IThemed
 
     protected override void WndProc(ref Message m)
     {
-        const int WM_QUERYENDSESSION = 0x11, WM_ENDSESSION = 0x16, WM_DEVICECHANGE = 0x219, DBT_DEVNODES_CHANGED = 7, SM_SHUTTINGDOWN = 0x2000;
+        const int WM_DEVICECHANGE = 0x219, DBT_DEVNODES_CHANGED = 7, SM_SHUTTINGDOWN = 0x2000;
         if (m.Msg == WM_DEVICECHANGE && m.WParam.ToInt64() == DBT_DEVNODES_CHANGED && DevicesChanged != null) DevicesChanged();
-        if (m.Msg == WM_QUERYENDSESSION || m.Msg == WM_ENDSESSION)
+        if (m.Msg == SessionEnd.WM_QUERYENDSESSION || m.Msg == SessionEnd.WM_ENDSESSION)
         {
-            // A plain sign-out leaves the drives attached to this PC; only act on shutdown / restart.
-            // Shutting down from the sign-in or lock screen reaches apps flagged as a sign-out
-            // (Windows signs the session out on the way), so a "sign-out" also counts as a
-            // shutdown when Windows has just logged a shutdown / restart request.
+            // Sign-out, shutdown or restart: see SessionEnd.
             long flags = m.LParam.ToInt64();
-            bool logoffFlag = (flags & 0x80000000L) != 0;
-            bool shutdown = !logoffFlag || GetSystemMetrics(SM_SHUTTINGDOWN) != 0 || DriveEjector.ShutdownRequestedRecently();
-            bool ending = m.Msg == WM_QUERYENDSESSION || m.WParam != IntPtr.Zero;
-            if (ending)
-                AppLog.Write("Session ending (" + (m.Msg == WM_QUERYENDSESSION ? "asked" : "confirmed") + ", flags 0x" + flags.ToString("X") +
-                             "): treated as " + (shutdown ? "shutdown or restart" : "sign-out") + ".");
-            if (shutdown && ending) ShuttingDown = true;
-            if (!ending) ShuttingDown = false;   // the shutdown was cancelled
+            SessionEnd.Result r = SessionEnd.Decide(m.Msg, m.WParam != IntPtr.Zero, flags, GetSystemMetrics(SM_SHUTTINGDOWN) != 0,
+                DriveEjector.ShutdownRequestedRecently);
+            if (r.Ending)
+                AppLog.Write("Session ending (" + (m.Msg == SessionEnd.WM_QUERYENDSESSION ? "asked" : "confirmed") + ", flags 0x" + flags.ToString("X") +
+                             "): treated as " + r.What + ".");
+            if (r.Shutdown && r.Ending) ShuttingDown = true;
+            if (!r.Ending) ShuttingDown = false;   // the shutdown was cancelled
             // Act before WinForms starts closing windows, so the app is still alive to do it.
-            if (m.Msg == WM_ENDSESSION && m.WParam != IntPtr.Zero && shutdown && ShutdownEnding != null) ShutdownEnding();
+            if (r.RaiseShutdownEnding && ShutdownEnding != null) ShutdownEnding();
         }
         base.WndProc(ref m);
     }
