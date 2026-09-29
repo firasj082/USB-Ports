@@ -242,10 +242,20 @@ class MainForm : Form, IThemed
         if (m.Msg == WM_QUERYENDSESSION || m.Msg == WM_ENDSESSION)
         {
             // A plain sign-out leaves the drives attached to this PC; only act on shutdown / restart.
-            bool signOutOnly = (m.LParam.ToInt64() & 0x80000000L) != 0 && GetSystemMetrics(SM_SHUTTINGDOWN) == 0;
-            if (!signOutOnly) ShuttingDown = true;
+            // Shutting down from the sign-in or lock screen reaches apps flagged as a sign-out
+            // (Windows signs the session out on the way), so a "sign-out" also counts as a
+            // shutdown when Windows has just logged a shutdown / restart request.
+            long flags = m.LParam.ToInt64();
+            bool logoffFlag = (flags & 0x80000000L) != 0;
+            bool shutdown = !logoffFlag || GetSystemMetrics(SM_SHUTTINGDOWN) != 0 || DriveEjector.ShutdownRequestedRecently();
+            bool ending = m.Msg == WM_QUERYENDSESSION || m.WParam != IntPtr.Zero;
+            if (ending)
+                AppLog.Write("Session ending (" + (m.Msg == WM_QUERYENDSESSION ? "asked" : "confirmed") + ", flags 0x" + flags.ToString("X") +
+                             "): treated as " + (shutdown ? "shutdown or restart" : "sign-out") + ".");
+            if (shutdown && ending) ShuttingDown = true;
+            if (!ending) ShuttingDown = false;   // the shutdown was cancelled
             // Act before WinForms starts closing windows, so the app is still alive to do it.
-            if (m.Msg == WM_ENDSESSION && m.WParam != IntPtr.Zero && !signOutOnly && ShutdownEnding != null) ShutdownEnding();
+            if (m.Msg == WM_ENDSESSION && m.WParam != IntPtr.Zero && shutdown && ShutdownEnding != null) ShutdownEnding();
         }
         base.WndProc(ref m);
     }

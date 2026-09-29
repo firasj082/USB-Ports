@@ -101,7 +101,9 @@ static class Installer
         }
     }
 
-    static void Shortcut(string lnkPath)
+    static void Shortcut(string lnkPath) { CreateShortcut(lnkPath, InstalledExe, ""); }
+
+    public static void CreateShortcut(string lnkPath, string target, string arguments)
     {
         Type shellType = Type.GetTypeFromProgID("WScript.Shell");
         object shell = Activator.CreateInstance(shellType);
@@ -109,9 +111,10 @@ static class Installer
         {
             object lnk = shellType.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { lnkPath });
             Type t = lnk.GetType();
-            t.InvokeMember("TargetPath", BindingFlags.SetProperty, null, lnk, new object[] { InstalledExe });
-            t.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, lnk, new object[] { InstallDir });
-            t.InvokeMember("IconLocation", BindingFlags.SetProperty, null, lnk, new object[] { InstalledExe + ",0" });
+            t.InvokeMember("TargetPath", BindingFlags.SetProperty, null, lnk, new object[] { target });
+            t.InvokeMember("Arguments", BindingFlags.SetProperty, null, lnk, new object[] { arguments });
+            t.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, lnk, new object[] { Path.GetDirectoryName(target) });
+            t.InvokeMember("IconLocation", BindingFlags.SetProperty, null, lnk, new object[] { target + ",0" });
             t.InvokeMember("Description", BindingFlags.SetProperty, null, lnk, new object[] { "See what is plugged into each USB port and how fast it runs" });
             t.InvokeMember("Save", BindingFlags.InvokeMethod, null, lnk, null);
             Marshal.FinalReleaseComObject(lnk);

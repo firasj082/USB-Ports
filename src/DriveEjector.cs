@@ -2,6 +2,7 @@
 // shutdown (every USB drive on every port, including behind hubs).
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.Eventing.Reader;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -21,6 +22,21 @@ static class DriveEjector
     public static void AskToBeToldLateAboutShutdown()
     {
         try { SetProcessShutdownParameters(0x100, 0); } catch { }
+    }
+
+    // Windows logs event 1074 (User32) when a shutdown or restart is requested - by the
+    // Start menu, the sign-in / lock screen, Windows Update - but not for a sign-out.
+    public static bool ShutdownRequestedRecently()
+    {
+        try
+        {
+            var query = new EventLogQuery("System", PathType.LogName,
+                "*[System[Provider[@Name='User32'] and (EventID=1074) and TimeCreated[timediff(@SystemTime) <= 120000]]]");
+            using (var reader = new EventLogReader(query))
+            using (EventRecord e = reader.ReadEvent())
+                return e != null;
+        }
+        catch { return false; }
     }
 
     // Returns null on success, otherwise why Windows refused.
