@@ -84,6 +84,8 @@ write here, and `.claude/rules/read-first.md` says when to read it.
     thread pool), since nothing new runs while idle. Re-measure on a copy that
     has run for an hour before the next release. The USER +2 appeared on 1.7.1
     too.
+  - Checked at 00:55, 5 minutes after start: 6 threads and 345 handles. The
+    two extra threads were startup leftovers. The idle count matches 1.7.1.
 
 ### 2026-09-30: 1.7.1, first run of the performance check
 - **How:** `.\test.ps1 -Perf` at 00:44 against the installed 1.7.1 (pid 3664,
